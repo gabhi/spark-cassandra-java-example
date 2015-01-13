@@ -18,7 +18,8 @@ import java.math.BigDecimal;
 import java.text.MessageFormat;
 import java.util.*;
 
-import static com.datastax.spark.connector.CassandraJavaUtil.*;
+//import static com.datastax.spark.connector.CassandraJavaUtil.*;
+import static com.datastax.spark.connector.japi.CassandraJavaUtil.*;
 
 public class App implements Serializable {
 	private transient SparkConf conf;
@@ -31,7 +32,7 @@ public class App implements Serializable {
 		JavaSparkContext sc = new JavaSparkContext(conf);
 		generateData(sc);
 		compute(sc);
-		showResults(sc);
+		// showResults(sc);
 		sc.stop();
 	}
 
@@ -56,7 +57,7 @@ public class App implements Serializable {
 				new Product(9, "Product C2", Arrays.asList(0, 3)));
 
 		JavaRDD<Product> productsRDD = sc.parallelize(products);
-		javaFunctions(productsRDD, Product.class).saveToCassandra("java_api", "products");
+		javaFunctions(productsRDD).writerBuilder("java_api", "products", mapToRow(Product.class)).saveToCassandra();
 
 		JavaRDD<Sale> salesRDD = productsRDD.filter(new Function<Product, Boolean>() {
 			@Override
@@ -75,25 +76,33 @@ public class App implements Serializable {
 			}
 		});
 
-		javaFunctions(salesRDD, Sale.class).saveToCassandra("java_api", "sales");
+		javaFunctions(salesRDD).writerBuilder("java_api", "sales", mapToRow(Sale.class)).saveToCassandra();
+
 	}
 
 	private void compute(JavaSparkContext sc) {
+		
+		
+		JavaPairRDD<Integer, Product> idPersonRdd = javaFunctions(sc)
+		        .cassandraTable("java_api", "products", mapColumnTo(Integer.class), mapRowTo(Person.class))
+		        .select("id", "first_name", "last_name", "birthdate", "email");
+		
+		
 		JavaPairRDD<Integer, Product> productsRDD = javaFunctions(sc).cassandraTable("java_api", "products",
-				Product.class).keyBy(new Function<Product, Integer>() {
+				mapColumnTo(Product.class)).keyBy(new Function<Product, Integer>() {
 			@Override
 			public Integer call(Product product) throws Exception {
 				return product.getId();
 			}
 		});
 
-		JavaPairRDD<Integer, Sale> salesRDD = javaFunctions(sc).cassandraTable("java_api", "sales", Sale.class).keyBy(
-				new Function<Sale, Integer>() {
-					@Override
-					public Integer call(Sale sale) throws Exception {
-						return sale.getProduct();
-					}
-				});
+		JavaPairRDD<Integer, Sale> salesRDD = javaFunctions(sc).cassandraTable("java_api", "sales",
+				mapColumnTo(Sale.class)).keyBy(new Function<Sale, Integer>() {
+			@Override
+			public Integer call(Sale sale) throws Exception {
+				return sale.getProduct();
+			}
+		});
 
 		JavaPairRDD<Integer, Tuple2<Sale, Product>> joinedRDD = salesRDD.join(productsRDD);
 
@@ -124,13 +133,13 @@ public class App implements Serializable {
 				return new Summary(input._1(), input._2());
 			}
 		});
+		javaFunctions(summariesRDD).writerBuilder("java_api", "summaries", mapToRow(Summary.class)).saveToCassandra();
 
-		javaFunctions(summariesRDD, Summary.class).saveToCassandra("java_api", "summaries");
 	}
 
 	private void showResults(JavaSparkContext sc) {
 		JavaPairRDD<Integer, Summary> summariesRdd = javaFunctions(sc).cassandraTable("java_api", "summaries",
-				Summary.class).keyBy(new Function<Summary, Integer>() {
+				mapColumnTo(Summary.class)).keyBy(new Function<Summary, Integer>() {
 			@Override
 			public Integer call(Summary summary) throws Exception {
 				return summary.getProduct();
@@ -138,7 +147,7 @@ public class App implements Serializable {
 		});
 
 		JavaPairRDD<Integer, Product> productsRdd = javaFunctions(sc).cassandraTable("java_api", "products",
-				Product.class).keyBy(new Function<Product, Integer>() {
+				mapColumnTo(Product.class)).keyBy(new Function<Product, Integer>() {
 			@Override
 			public Integer call(Product product) throws Exception {
 				return product.getId();
@@ -160,11 +169,10 @@ public class App implements Serializable {
 			System.err.println("Syntax: com.datastax.spark.demo.JavaDemo <Spark Master URL> <Cassandra contact point>");
 			master = "local[4]";
 			host = "localhost";
-		}else{
+		} else {
 			master = args[0];
 			host = args[1];
 		}
-		
 
 		SparkConf conf = new SparkConf();
 		conf.setAppName("Java API demo");
