@@ -83,10 +83,6 @@ public class App implements Serializable {
 	private void compute(JavaSparkContext sc) {
 		
 		
-		JavaPairRDD<Integer, Product> idPersonRdd = javaFunctions(sc)
-		        .cassandraTable("java_api", "products", mapColumnTo(Integer.class), mapRowTo(Person.class))
-		        .select("id", "first_name", "last_name", "birthdate", "email");
-		
 		
 		JavaPairRDD<Integer, Product> productsRDD = javaFunctions(sc).cassandraTable("java_api", "products",
 				mapColumnTo(Product.class)).keyBy(new Function<Product, Integer>() {
